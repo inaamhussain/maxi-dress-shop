@@ -47,29 +47,673 @@
 </head>
 <body>
 
-    <!-- Mock Product Data -->
+    <!-- Firebase Imports -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, getDocs, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        // Export Firebase services to the global window object for use in the main script block
+        window.firebase = {
+            initializeApp, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, getFirestore, doc, getDoc, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, getDocs, setLogLevel
+        };
+    </script>
+
+    <!-- Global JS/State -->
     <script>
         // Global Constants for Gemini API
         const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=";
         const apiKey = "" // API key is handled by the environment if left blank.
 
-        const maxiDresses = [
-            { id: 1, name: "The Riviera A-Line", style: "A-Line", occasion: "Casual", color: "Cream", price: 79.99, imageUrl: "https://placehold.co/400x600/f5e5c7/333?text=Riviera+Maxi", fabric: "Linen-Blend", description: "Default casual chic maxi dress." },
-            { id: 2, name: "Empire Chiffon Gown", style: "Empire Waist", occasion: "Evening", color: "Navy", price: 129.50, imageUrl: "https://placehold.co/400x600/87cefa/333?text=Chiffon+Gown", fabric: "Silk Chiffon", description: "Default formal navy gown." },
-            { id: 3, name: "Bohemian Wrap Dress", style: "Wrap", occasion: "Beach", color: "Floral", price: 89.99, imageUrl: "https://placehold.co/400x600/98fb98/333?text=Boho+Wrap", fabric: "Rayon", description: "Default beach cover-up wrap dress." },
-            { id: 4, name: "Silk Slip Maxi", style: "Slip", occasion: "Evening", color: "Black", price: 159.00, imageUrl: "https://placehold.co/400x600/333333/fff?text=Silk+Slip", fabric: "Heavy Silk", description: "Default simple black slip dress." },
-            { id: 5, name: "Linen Tiered Dress", style: "Tiered", occasion: "Casual", color: "White", price: 69.99, imageUrl: "https://placehold.co/400x600/eee/333?text=Linen+Tiered", fabric: "Pure Linen", description: "Default light and breezy linen dress." },
-            { id: 6, name: "Bridal Rehearsal Dress", style: "A-Line", occasion: "Wedding Guest", color: "Ivory", price: 185.00, imageUrl: "https://placehold.co/400x600/f0fff0/333?text=Bridal+Maxi", fabric: "Lace Overlay", description: "Default elegant rehearsal dinner dress." },
-            { id: 7, name: "Knitted Halter Maxi", style: "Halter", occasion: "Casual", color: "Terracotta", price: 95.00, imageUrl: "https://placehold.co/400x600/b87333/fff?text=Halter+Knit", fabric: "Ribbed Knit", description: "Default comfy knit halter dress." },
-            { id: 8, name: "V-Neck Jersey Maxi", style: "A-Line", occasion: "Casual", color: "Black", price: 59.99, imageUrl: "https://placehold.co/400x600/444/fff?text=Jersey+V-Neck", fabric: "Soft Jersey", description: "Default everyday V-neck dress." },
-            { id: 9, name: "Sequined Ballgown", style: "Empire Waist", occasion: "Evening", color: "Gold", price: 299.00, imageUrl: "https://placehold.co/400x600/ffd700/333?text=Sequined+Gown", fabric: "Net Sequins", description: "Default show-stopping gold dress." },
-            { id: 10, name: "Print Summer Dress", style: "Wrap", occasion: "Beach", color: "Printed", price: 75.00, imageUrl: "https://placehold.co/400x600/ffc0cb/333?text=Summer+Print", fabric: "Light Cotton", description: "Default vibrant summer print dress." },
-        ];
+        // Global Firebase variables
+        let db;
+        let auth;
+        let userId;
+        let products = []; // Array for live product data from Firestore
+        let styles = [];
+        let occasions = [];
+        let colors = [];
+        let currentView = 'shop';
 
-        // Unique filter options
-        const styles = [...new Set(maxiDresses.map(d => d.style))];
-        const occasions = [...new Set(maxiDresses.map(d => d.occasion))];
-        const colors = [...new Set(maxiDresses.map(d => d.color))];
+        // Firebase Configuration (MUST be defined for Canvas environment)
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+        // --- CORE FIREBASE & DATA MANAGEMENT ---
+
+        async function initFirebase() {
+            if (!firebaseConfig || typeof firebase === 'undefined') {
+                console.error("Firebase config or SDK is missing.");
+                return;
+            }
+            
+            try {
+                const app = firebase.initializeApp(firebaseConfig);
+                db = firebase.getFirestore(app);
+                auth = firebase.getAuth(app);
+                
+                firebase.setLogLevel('debug'); // Enable Firestore logs
+
+                // Authentication logic
+                const token = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+                
+                if (token) {
+                    await firebase.signInWithCustomToken(auth, token);
+                } else {
+                    await firebase.signInAnonymously(auth);
+                }
+
+                firebase.onAuthStateChanged(auth, (user) => {
+                    userId = user ? user.uid : crypto.randomUUID();
+                    document.getElementById('auth-status').textContent = `User ID: ${userId.substring(0, 8)}...`;
+                    fetchProducts();
+                    // showView('shop'); // fetchProducts calls renderAll which handles initial view
+                });
+            } catch (e) {
+                console.error("Error initializing Firebase:", e);
+                // Fallback rendering
+                renderAll();
+            }
+        }
+
+        // Collection path for private user data
+        function getCollectionPath() {
+            return `artifacts/${appId}/users/${userId}/maxi_dresses`;
+        }
+
+        function fetchProducts() {
+            if (!db || !userId) {
+                products = [];
+                renderAll();
+                return;
+            }
+
+            const colRef = firebase.collection(db, getCollectionPath());
+            
+            // Set up real-time listener (onSnapshot)
+            firebase.onSnapshot(colRef, (snapshot) => {
+                const newProducts = [];
+                snapshot.forEach(doc => {
+                    newProducts.push({ id: doc.id, ...doc.data() });
+                });
+                
+                products = newProducts;
+                
+                // Recalculate filter options based on live data
+                styles = [...new Set(products.map(d => d.style))];
+                occasions = [...new Set(products.map(d => d.occasion))];
+                colors = [...new Set(products.map(d => d.color))];
+
+                renderAll(); // Re-render both shop and admin view
+                console.log("Products updated in real-time:", products.length);
+            }, (error) => {
+                console.error("Error fetching products:", error);
+                renderAll();
+            });
+        }
+
+        function renderAll() {
+            renderFilters();
+            renderProducts();
+            renderAdminProducts();
+        }
+
+        // --- ADMIN CRUD FUNCTIONS ---
+
+        function openAdminModal(product = null) {
+            const modal = document.getElementById('admin-modal');
+            const form = document.getElementById('product-form');
+            const variantsContainer = document.getElementById('variants-container');
+            const title = document.getElementById('admin-modal-title');
+            
+            form.reset();
+            document.getElementById('product-id').value = '';
+            variantsContainer.innerHTML = '';
+            document.getElementById('admin-error-message').classList.add('hidden');
+
+            if (product) {
+                title.textContent = `Edit Product: ${product.name}`;
+                document.getElementById('product-id').value = product.id;
+                document.getElementById('product-name').value = product.name;
+                document.getElementById('product-image').value = product.imageUrl || '';
+                document.getElementById('product-style').value = product.style;
+                document.getElementById('product-occasion').value = product.occasion;
+                document.getElementById('product-color').value = product.color;
+                document.getElementById('product-fabric').value = product.fabric;
+                document.getElementById('product-description').value = product.description || '';
+
+                if (product.variants && product.variants.length > 0) {
+                    product.variants.forEach(variant => addVariantField(variant));
+                } else {
+                    addVariantField(); // Add one empty variant if none exist
+                }
+            } else {
+                title.textContent = 'Add New Product';
+                addVariantField(); // Add one empty variant for new product
+            }
+
+            modal.classList.remove('hidden');
+            lucide.createIcons();
+        }
+
+        function closeAdminModal() {
+            document.getElementById('admin-modal').classList.add('hidden');
+        }
+        
+        function addVariantField(variant = { size: '', price: 0, stock: 0 }) {
+            const container = document.getElementById('variants-container');
+            const index = container.children.length;
+
+            const variantDiv = document.createElement('div');
+            variantDiv.className = 'flex space-x-2 items-end border p-2 rounded-md bg-gray-50';
+            variantDiv.innerHTML = `
+                <div class="flex-1">
+                    <label class="block text-xs font-medium text-gray-700">Size</label>
+                    <input type="text" value="${variant.size}" name="variant-size" required placeholder="S, M, L..." class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-1 text-sm">
+                </div>
+                <div class="flex-1">
+                    <label class="block text-xs font-medium text-gray-700">Price ($)</label>
+                    <input type="number" step="0.01" value="${variant.price || ''}" name="variant-price" required placeholder="0.00" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-1 text-sm">
+                </div>
+                <div class="flex-1">
+                    <label class="block text-xs font-medium text-gray-700">Stock</label>
+                    <input type="number" value="${variant.stock || ''}" name="variant-stock" required placeholder="0" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-1 text-sm">
+                </div>
+                <button type="button" onclick="this.parentNode.remove();" class="p-2 text-red-500 hover:text-red-700 transition" aria-label="Remove variant">
+                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                </button>
+            `;
+            container.appendChild(variantDiv);
+            lucide.createIcons();
+        }
+
+        async function saveProduct() {
+            const id = document.getElementById('product-id').value;
+            const form = document.getElementById('product-form');
+            const saveButton = document.getElementById('admin-save-button');
+            const errorDiv = document.getElementById('admin-error-message');
+            errorDiv.classList.add('hidden');
+
+            if (!db || !userId) {
+                errorDiv.textContent = "Database connection not ready. Please wait or check authentication.";
+                errorDiv.classList.remove('hidden');
+                return;
+            }
+
+            saveButton.disabled = true;
+            saveButton.textContent = 'Saving...';
+
+            const variantSizes = Array.from(form.elements['variant-size']).map(el => el.value);
+            const variantPrices = Array.from(form.elements['variant-price']).map(el => parseFloat(el.value));
+            const variantStocks = Array.from(form.elements['variant-stock']).map(el => parseInt(el.value));
+
+            if (variantSizes.some(s => !s) || variantPrices.some(p => isNaN(p) || p < 0) || variantStocks.some(s => isNaN(s) || s < 0)) {
+                errorDiv.textContent = "Please ensure all variant fields (Size, Price, Stock) are filled correctly.";
+                errorDiv.classList.remove('hidden');
+                saveButton.disabled = false;
+                saveButton.textContent = 'Save Product';
+                return;
+            }
+
+            const variants = variantSizes.map((size, index) => ({
+                size: size,
+                price: variantPrices[index],
+                stock: variantStocks[index]
+            }));
+
+            const productData = {
+                name: form['product-name'].value,
+                imageUrl: form['product-image'].value,
+                style: form['product-style'].value,
+                occasion: form['product-occasion'].value,
+                color: form['product-color'].value,
+                fabric: form['product-fabric'].value,
+                description: form['product-description'].value,
+                variants: variants,
+                updatedAt: firebase.serverTimestamp(),
+            };
+
+            try {
+                if (id) {
+                    // Update existing document
+                    const docRef = firebase.doc(db, getCollectionPath(), id);
+                    await firebase.updateDoc(docRef, productData);
+                    console.log("Document successfully updated!");
+                } else {
+                    // Add new document
+                    const colRef = firebase.collection(db, getCollectionPath());
+                    await firebase.addDoc(colRef, { ...productData, createdAt: firebase.serverTimestamp() });
+                    console.log("Document successfully added!");
+                }
+                closeAdminModal();
+            } catch (e) {
+                console.error("Error saving document: ", e);
+                errorDiv.textContent = "Error saving product: " + e.message;
+                errorDiv.classList.remove('hidden');
+            } finally {
+                saveButton.disabled = false;
+                saveButton.textContent = 'Save Product';
+            }
+        }
+
+        async function deleteProduct(id) {
+            if (!confirm("Are you sure you want to delete this product?")) return;
+
+            if (!db || !userId) {
+                console.error("Database connection not ready for deletion.");
+                return;
+            }
+
+            try {
+                const docRef = firebase.doc(db, getCollectionPath(), id);
+                await firebase.deleteDoc(docRef);
+                console.log("Document successfully deleted!");
+            } catch (e) {
+                console.error("Error removing document: ", e);
+            }
+        }
+
+        // --- ADMIN UI RENDERING ---
+
+        function renderAdminProducts() {
+            if (currentView !== 'admin') return;
+
+            const tbody = document.getElementById('admin-product-list');
+            if (!tbody) return;
+
+            tbody.innerHTML = ''; // Clear table content
+
+            if (products.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" class="p-6 text-center text-gray-500">No products found. Add your first maxi dress!</td></tr>`;
+                return;
+            }
+
+            products.forEach(product => {
+                const minPrice = product.variants && product.variants.length > 0
+                    ? Math.min(...product.variants.map(v => v.price))
+                    : 'N/A';
+                
+                const variantCount = product.variants ? product.variants.length : 0;
+
+                const row = document.createElement('tr');
+                row.className = 'hover:bg-gray-50 transition duration-100';
+                
+                row.innerHTML = `
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <div class="flex items-center">
+                            <img class="h-10 w-10 rounded-full object-cover mr-4" src="${product.imageUrl || 'https://placehold.co/100x100/ccc/333?text=N/A'}" onerror="this.onerror=null; this.src='https://placehold.co/100x100/ccc/333?text=N/A';" alt="Product Image">
+                            <div class="text-sm font-medium text-gray-900 truncate max-w-[200px]">${product.name}</div>
+                        </div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${product.style} / ${product.occasion}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold text-accent">$${minPrice.toFixed(2)}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${variantCount} variant(s)</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-3">
+                        <button onclick="openAdminModal(products.find(p => p.id === '${product.id}'))" class="text-indigo-600 hover:text-indigo-900" aria-label="Edit Product">
+                            <i data-lucide="square-pen" class="w-5 h-5 inline-block"></i>
+                        </button>
+                        <button onclick="deleteProduct('${product.id}')" class="text-red-600 hover:text-red-900" aria-label="Delete Product">
+                            <i data-lucide="trash-2" class="w-5 h-5 inline-block"></i>
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+            lucide.createIcons();
+        }
+
+        // --- SHOP VIEW RENDERING (UPDATED for variants) ---
+
+        function getMinPrice(product) {
+            if (product.variants && product.variants.length > 0) {
+                return Math.min(...product.variants.map(v => v.price));
+            }
+            return 0.00;
+        }
+
+        function renderProducts() {
+            if (currentView !== 'shop') return;
+            
+            const grid = document.getElementById('product-grid');
+            const productCount = document.getElementById('product-count');
+            const noResults = document.getElementById('no-results');
+            
+            if (!grid) return;
+
+            let filteredProducts = products;
+
+            // Apply Filters (logic remains the same)
+            if (activeFilters.styles.length > 0) {
+                filteredProducts = filteredProducts.filter(p => activeFilters.styles.includes(p.style));
+            }
+            if (activeFilters.occasions.length > 0) {
+                filteredProducts = filteredProducts.filter(p => activeFilters.occasions.includes(p.occasion));
+            }
+            if (activeFilters.colors.length > 0) {
+                filteredProducts = filteredProducts.filter(p => activeFilters.colors.includes(p.color));
+            }
+            
+            // Apply Sorting (logic remains the same)
+            const sortValue = document.getElementById('sort-select').value;
+            filteredProducts.sort((a, b) => {
+                if (sortValue === 'price-asc') return getMinPrice(a) - getMinPrice(b);
+                if (sortValue === 'price-desc') return getMinPrice(b) - getMinPrice(a);
+                if (sortValue === 'name-asc') return a.name.localeCompare(b.name);
+                return 0; // newest/default
+            });
+
+            grid.innerHTML = '';
+
+            if (filteredProducts.length === 0) {
+                noResults.classList.remove('hidden');
+                productCount.textContent = '0';
+                return;
+            }
+
+            noResults.classList.add('hidden');
+            productCount.textContent = filteredProducts.length;
+
+            filteredProducts.forEach(product => {
+                const productCard = document.createElement('div');
+                productCard.className = 'group bg-white rounded-xl overflow-hidden shadow-lg hover:shadow-2xl transition duration-300 transform hover:-translate-y-1';
+                const minPrice = getMinPrice(product);
+                
+                productCard.innerHTML = `
+                    <div class="relative overflow-hidden aspect-[2/3]">
+                        <img src="${product.imageUrl}" onerror="this.onerror=null; this.src='https://placehold.co/400x600/ccc/333?text=Image+Error';" 
+                             alt="${product.name}" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105">
+                        <button class="absolute top-3 right-3 p-2 bg-white rounded-full text-gray-800 opacity-0 group-hover:opacity-100 transition duration-300 transform translate-x-3 group-hover:translate-x-0" aria-label="Quick View">
+                            <i data-lucide="eye" class="w-5 h-5"></i>
+                        </button>
+                    </div>
+                    <div class="p-4 text-center">
+                        <h4 class="text-sm font-medium text-gray-900 truncate">${product.name}</h4>
+                        <p class="text-xs text-gray-500 mb-2">${product.style} &bull; ${product.occasion}</p>
+                        <p class="text-lg font-bold text-accent">$${minPrice.toFixed(2)}</p>
+                        <button class="w-full mt-3 py-2 text-sm font-semibold text-white bg-accent rounded-full opacity-0 group-hover:opacity-100 transition duration-300 transform translate-y-2 group-hover:translate-y-0" aria-label="Add to Cart">
+                            Add to Cart
+                        </button>
+                        <button onclick="generateDescription({id: ${product.id}, name: '${product.name.replace(/'/g, "\\'")}', style: '${product.style}', occasion: '${product.occasion}', color: '${product.color}', fabric: '${product.fabric}'})"
+                                class="w-full mt-3 py-2 text-xs font-semibold text-accent border border-accent rounded-full hover:bg-accent hover:text-white transition duration-300 flex items-center justify-center">
+                            Generate Description ✨
+                        </button>
+                    </div>
+                `;
+                grid.appendChild(productCard);
+            });
+            lucide.createIcons();
+        }
+
+        // --- VIEW ROUTING ---
+
+        function showView(viewName) {
+            currentView = viewName;
+            document.getElementById('shop-view').classList.add('hidden');
+            document.getElementById('admin-view').classList.add('hidden');
+
+            if (viewName === 'shop') {
+                document.getElementById('shop-view').classList.remove('hidden');
+                renderProducts(); 
+            } else if (viewName === 'admin') {
+                document.getElementById('admin-view').classList.remove('hidden');
+                renderAdminProducts();
+            }
+            // Update active navigation link
+            document.querySelectorAll('#nav a').forEach(link => {
+                link.classList.remove('font-bold', 'text-accent');
+                if (link.dataset.view === viewName) {
+                    link.classList.add('font-bold', 'text-accent');
+                }
+            });
+            document.getElementById('mobile-menu').classList.add('hidden'); // Close mobile menu when switching views
+        }
+        
+        // --- GEMINI API INTEGRATION (Shop/Admin) ---
+
+        // Reusable loading spinner HTML
+        const loadingSpinner = `
+            <div class="flex flex-col items-center justify-center h-full py-8">
+                <svg class="animate-spin -ml-1 mr-3 h-8 w-8 text-accent" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <p class="mt-4 text-gray-600 font-medium">Generating bespoke copy...</p>
+            </div>
+        `;
+
+        function openModal(dressName) {
+            document.getElementById('modal-product-name').textContent = dressName;
+            document.getElementById('modal-content').innerHTML = loadingSpinner;
+            document.getElementById('description-modal').classList.remove('hidden');
+        }
+
+        function closeModal() {
+            document.getElementById('description-modal').classList.add('hidden');
+        }
+
+        async function triggerAdminAIDescription() {
+            const product = {
+                name: document.getElementById('product-name').value,
+                style: document.getElementById('product-style').value,
+                occasion: document.getElementById('product-occasion').value,
+                color: document.getElementById('product-color').value,
+                fabric: document.getElementById('product-fabric').value
+            };
+
+            const targetTextarea = document.getElementById('product-description');
+            targetTextarea.value = "Generating...";
+            
+            const generatedText = await getAIDescription(product);
+            targetTextarea.value = generatedText;
+        }
+
+        async function getAIDescription(product) {
+            // LLM Configuration
+            const systemPrompt = "You are a world-class fashion copywriter for a high-end e-commerce site specializing in flowing maxi dresses. Your task is to write a single, engaging, and detailed product description (under 100 words) that captures the mood, utility, and quality of the dress based on its attributes. Focus on rich sensory language, fit, and elegance. Do not use markdown (e.g., *bold* or lists) in the output.";
+            
+            const userQuery = `Write a compelling product description for a maxi dress with the following attributes: 
+                Name: ${product.name}, 
+                Style: ${product.style}, 
+                Occasion: ${product.occasion}, 
+                Color: ${product.color}, 
+                Fabric: ${product.fabric}.`;
+
+            const payload = {
+                contents: [{ parts: [{ text: userQuery }] }],
+                systemInstruction: {
+                    parts: [{ text: systemPrompt }]
+                },
+            };
+
+            const apiUrl = `${GEMINI_API_URL}${apiKey}`;
+            
+            // Exponential backoff retry logic
+            const maxRetries = 3;
+            for (let i = 0; i < maxRetries; i++) {
+                try {
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+
+                    const result = await response.json();
+                    const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+
+                    if (text) {
+                        return text;
+                    } else {
+                        throw new Error("API response structure unexpected or missing text.");
+                    }
+                } catch (error) {
+                    console.error(`Attempt ${i + 1} failed:`, error);
+                    if (i < maxRetries - 1) {
+                        const delay = Math.pow(2, i) * 1000;
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                    } else {
+                        return `[AI Generation Failed: ${error.message}]`;
+                    }
+                }
+            }
+        }
+        
+        async function generateDescription(product) {
+            openModal(product.name);
+            const text = await getAIDescription(product);
+            document.getElementById('modal-content').innerHTML = `<p>${text.replace(/\n/g, '<br>')}</p>`;
+        }
+
+
+        // --- FILTER RENDERING AND LOGIC (Mostly Unchanged) ---
+
+        function renderFilterOptions(options, type, containerId) {
+            const container = document.getElementById(containerId);
+            if (!container) return;
+
+            container.innerHTML = '';
+            
+            // Render filter options only if products have loaded
+            if (products.length === 0) {
+                container.innerHTML = `<p class="text-sm text-gray-400">Loading...</p>`;
+                return;
+            }
+
+            options.forEach(option => {
+                const isChecked = activeFilters[type].includes(option);
+                
+                let htmlContent = '';
+
+                if (type === 'colors') {
+                    // Special handling for color swatches
+                    const colorMap = {
+                        "Cream": "bg-[#f5e5c7]", "Navy": "bg-blue-700", "Floral": "bg-green-300", 
+                        "Black": "bg-black", "White": "bg-white", "Ivory": "bg-[#f0fff0]", 
+                        "Terracotta": "bg-[#b87333]", "Gold": "bg-yellow-500", "Printed": "bg-pink-300"
+                    };
+                    const bgColor = colorMap[option] || 'bg-gray-400';
+                    const borderColor = option === 'White' || option === 'Ivory' ? 'border-gray-400' : 'border-transparent';
+                    const ringClass = isChecked ? 'ring-2 ring-offset-1 ring-accent' : '';
+                    
+                    htmlContent = `
+                        <button onclick="toggleFilter('${type}', '${option}')" 
+                                class="w-full h-8 ${bgColor} border ${borderColor} rounded-full flex items-center justify-center relative ${ringClass}"
+                                aria-label="Filter by ${option}">
+                            ${option === 'Black' && isChecked ? '<i data-lucide="check" class="w-3 h-3 text-white"></i>' : (isChecked && option !== 'Black' ? '<i data-lucide="check" class="w-3 h-3 text-black"></i>' : '')}
+                        </button>
+                    `;
+                } else {
+                    // Checkbox/Text buttons for styles and occasions
+                    htmlContent = `
+                        <label class="flex items-center cursor-pointer text-sm text-gray-600 hover:text-accent transition duration-150">
+                            <input type="checkbox" ${isChecked ? 'checked' : ''} onchange="toggleFilter('${type}', '${option}')" 
+                                class="mr-2 h-4 w-4 text-accent border-gray-300 rounded focus:ring-accent">
+                            ${option}
+                        </label>
+                    `;
+                }
+
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = htmlContent.trim();
+                if (type === 'colors') {
+                    container.appendChild(tempDiv.firstChild);
+                } else {
+                    container.appendChild(tempDiv.firstChild);
+                }
+            });
+            lucide.createIcons();
+        }
+
+        function toggleFilter(type, value) {
+            const index = activeFilters[type].indexOf(value);
+            if (index > -1) {
+                activeFilters[type].splice(index, 1);
+            } else {
+                activeFilters[type].push(value);
+            }
+            renderFilters();
+            renderProducts();
+        }
+
+        function clearFilters() {
+            activeFilters = { styles: [], occasions: [], colors: [] };
+            renderFilters();
+            renderProducts();
+        }
+        
+        // --- MISSING FUNCTION DEFINITION ADDED HERE ---
+        function renderFilters() {
+            // Desktop filters
+            renderFilterOptions(styles, 'styles', 'styles-list');
+            renderFilterOptions(occasions, 'occasions', 'occasions-list');
+            renderFilterOptions(colors, 'colors', 'colors-list');
+
+            // Mobile filters
+            renderFilterOptions(styles, 'styles', 'mobile-styles-list');
+            renderFilterOptions(occasions, 'occasions', 'mobile-occasions-list');
+            renderFilterOptions(colors, 'colors', 'mobile-colors-list');
+
+            // --- Update Filter Counts ---
+            
+            // 1. Calculate the currently filtered product count
+            const currentFilteredCount = products.filter(p => 
+                (activeFilters.styles.length === 0 || activeFilters.styles.includes(p.style)) &&
+                (activeFilters.occasions.length === 0 || activeFilters.occasions.includes(p.occasion)) &&
+                (activeFilters.colors.length === 0 || activeFilters.colors.includes(p.color))
+            ).length;
+
+            // 2. Update the mobile filter button text with the number of active filters
+            const totalActiveFilters = activeFilters.styles.length + activeFilters.occasions.length + activeFilters.colors.length;
+            const mobileFilterButton = document.getElementById('mobile-filter-button-open');
+            if (mobileFilterButton) {
+                mobileFilterButton.innerHTML = `Filters (${totalActiveFilters}) <i data-lucide="filter" class="w-4 h-4"></i>`;
+            }
+            
+            // 3. Update the mobile modal 'Apply' button text with the number of results
+            const mobileCountDisplay = document.getElementById('mobile-product-count-display');
+            if (mobileCountDisplay) {
+                mobileCountDisplay.textContent = currentFilteredCount;
+            }
+
+            lucide.createIcons();
+        }
+        // ---------------------------------------------
+
+
+        // --- UI UTILITIES ---
+
+        function setupMobileToggle() {
+            const menuBtn = document.getElementById('mobile-menu-button');
+            const menu = document.getElementById('mobile-menu');
+            const filterOpenBtn = document.getElementById('mobile-filter-button-open');
+            const filterCloseBtn = document.getElementById('mobile-filter-button-close');
+            const filterModal = document.getElementById('mobile-filter-modal');
+
+            menuBtn.addEventListener('click', () => menu.classList.toggle('hidden'));
+            
+            if (filterOpenBtn) {
+                filterOpenBtn.addEventListener('click', () => {
+                    filterModal.classList.remove('translate-x-full');
+                });
+            }
+            if (filterCloseBtn) {
+                filterCloseBtn.addEventListener('click', () => {
+                    filterModal.classList.add('translate-x-full');
+                });
+            }
+        }
+        
+        // --- INITIALIZATION ---
+        window.onload = function() {
+            document.getElementById('current-year').textContent = new Date().getFullYear();
+            initFirebase();
+            setupMobileToggle();
+            // Initial call to renderAll is handled after Firebase auth is complete
+        };
+
     </script>
 
     <!-- 1. Header & Navigation -->
@@ -77,12 +721,12 @@
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex justify-between items-center h-20">
                 <!-- Logo -->
-                <a href="#" class="text-3xl font-extrabold tracking-tight text-accent">MAXI</a>
+                <a href="#" class="text-3xl font-extrabold tracking-tight text-accent" onclick="showView('shop')">MAXI</a>
 
                 <!-- Desktop Navigation -->
-                <nav class="hidden md:flex space-x-8">
-                    <a href="#" class="text-gray-600 hover:text-accent font-medium transition duration-150">Shop All</a>
-                    <a href="#" class="text-gray-600 hover:text-accent font-medium transition duration-150">New Arrivals</a>
+                <nav class="hidden md:flex space-x-8" id="nav">
+                    <a href="#" class="text-gray-600 hover:text-accent font-medium transition duration-150 font-bold text-accent" data-view="shop" onclick="showView('shop')">Shop All</a>
+                    <a href="#" class="text-gray-600 hover:text-accent font-medium transition duration-150" data-view="admin" onclick="showView('admin')">Admin Panel</a>
                     <a href="#" class="text-gray-600 hover:text-accent font-medium transition duration-150">Evening</a>
                     <a href="#" class="text-gray-600 hover:text-accent font-medium transition duration-150">Casual</a>
                     <a href="#" class="text-gray-600 hover:text-accent font-medium transition duration-150">Sale</a>
@@ -90,6 +734,7 @@
 
                 <!-- Utility Icons -->
                 <div class="flex items-center space-x-4">
+                    <span id="auth-status" class="text-xs text-gray-500 hidden sm:block">Loading...</span>
                     <button class="p-2 rounded-full hover:bg-gray-100 transition duration-150 hidden md:block" aria-label="Search">
                         <i data-lucide="search" class="w-5 h-5 text-gray-600"></i>
                     </button>
@@ -98,7 +743,7 @@
                     </button>
                     <button class="p-2 rounded-full hover:bg-gray-100 transition duration-150 relative" aria-label="Cart">
                         <i data-lucide="shopping-cart" class="w-5 h-5 text-gray-600"></i>
-                        <span class="absolute top-0 right-0 inline-flex items-center justify-center px-2 py-0.5 text-xs font-bold leading-none text-white transform translate-x-1/2 -translate-y-1/2 bg-accent rounded-full">3</span>
+                        <span class="absolute top-0 right-0 inline-flex items-center justify-center px-2 py-0.5 text-xs font-bold leading-none text-white transform translate-x-1/2 -translate-y-1/2 bg-accent rounded-full">0</span>
                     </button>
                     <!-- Mobile Menu Button -->
                     <button id="mobile-menu-button" class="md:hidden p-2 rounded-full hover:bg-gray-100 transition duration-150" aria-label="Menu">
@@ -110,8 +755,8 @@
         <!-- Mobile Menu (Hidden by default) -->
         <div id="mobile-menu" class="hidden md:hidden bg-white shadow-lg border-t border-gray-100">
             <div class="px-2 pt-2 pb-3 space-y-1 sm:px-3">
-                <a href="#" class="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:bg-gray-50 hover:text-accent">Shop All</a>
-                <a href="#" class="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:bg-gray-50 hover:text-accent">New Arrivals</a>
+                <a href="#" class="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:bg-gray-50 hover:text-accent" data-view="shop" onclick="showView('shop')">Shop All</a>
+                <a href="#" class="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:bg-gray-50 hover:text-accent" data-view="admin" onclick="showView('admin')">Admin Panel</a>
                 <a href="#" class="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:bg-gray-50 hover:text-accent">Evening</a>
                 <a href="#" class="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:bg-gray-50 hover:text-accent">Casual</a>
                 <a href="#" class="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:bg-gray-50 hover:text-accent">Sale</a>
@@ -123,129 +768,160 @@
         </div>
     </header>
 
-    <!-- 2. Hero Section -->
     <main>
-        <div class="relative h-[60vh] md:h-[80vh] bg-cover bg-center" style="background-image: url('https://placehold.co/1600x900/f5e5c7/8B4513?text=The+Maxi+Movement');">
-            <div class="absolute inset-0 bg-black bg-opacity-30 flex items-center justify-center">
-                <div class="text-center p-8">
-                    <h1 class="text-4xl sm:text-6xl font-bold text-white mb-4 drop-shadow-lg">
-                        Effortless Elegance: The Maxi Collection
-                    </h1>
-                    <p class="text-lg sm:text-xl text-white mb-8 drop-shadow-md max-w-2xl mx-auto">
-                        Discover the perfect drape, fit, and flow for every occasion, from beach days to black-tie events.
-                    </p>
-                    <a href="#shop" class="inline-block bg-white text-accent font-semibold py-3 px-8 rounded-full shadow-lg hover:bg-gray-100 transition duration-300 transform hover:scale-105">
-                        Shop The New Collection
-                    </a>
-                </div>
+        <!-- ADMIN VIEW -->
+        <div id="admin-view" class="hidden max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 md:py-16">
+            <div class="flex justify-between items-center mb-8">
+                <h2 class="text-3xl font-bold text-gray-800">Product Management</h2>
+                <button onclick="openAdminModal()" class="bg-accent text-white py-2 px-4 rounded-lg font-semibold hover:bg-opacity-90 transition flex items-center">
+                    <i data-lucide="plus-circle" class="w-5 h-5 mr-2"></i> Add New Product
+                </button>
+            </div>
+
+            <!-- Admin Product Table -->
+            <div class="bg-white rounded-xl shadow-2xl overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Style/Occasion</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Lowest Price</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Variants</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="admin-product-list" class="bg-white divide-y divide-gray-200">
+                        <!-- Admin product rows will be rendered here -->
+                    </tbody>
+                </table>
             </div>
         </div>
 
-        <!-- 3. Main Product Listing and Filters -->
-        <section id="shop" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 md:py-16">
-            <h2 class="text-3xl font-bold text-gray-800 mb-8 md:mb-12">All Maxi Dresses</h2>
-            
-            <div class="flex flex-col md:flex-row gap-8">
+        <!-- SHOP VIEW -->
+        <div id="shop-view">
+            <!-- 2. Hero Section -->
+            <div class="relative h-[60vh] md:h-[80vh] bg-cover bg-center" style="background-image: url('https://placehold.co/1600x900/f5e5c7/8B4513?text=The+Maxi+Movement');">
+                <div class="absolute inset-0 bg-black bg-opacity-30 flex items-center justify-center">
+                    <div class="text-center p-8">
+                        <h1 class="text-4xl sm:text-6xl font-bold text-white mb-4 drop-shadow-lg">
+                            Effortless Elegance: The Maxi Collection
+                        </h1>
+                        <p class="text-lg sm:text-xl text-white mb-8 drop-shadow-md max-w-2xl mx-auto">
+                            Discover the perfect drape, fit, and flow for every occasion, from beach days to black-tie events.
+                        </p>
+                        <a href="#shop" class="inline-block bg-white text-accent font-semibold py-3 px-8 rounded-full shadow-lg hover:bg-gray-100 transition duration-300 transform hover:scale-105">
+                            Shop The Collection
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 3. Main Product Listing and Filters -->
+            <section id="shop" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 md:py-16">
+                <h2 class="text-3xl font-bold text-gray-800 mb-8 md:mb-12">All Maxi Dresses</h2>
                 
-                <!-- Desktop Filter Sidebar -->
-                <aside id="desktop-filters" class="hidden md:block w-full md:w-1/4 filter-sidebar p-4 bg-white rounded-lg shadow-xl">
-                    <h3 class="text-xl font-semibold mb-6 border-b pb-3 text-accent">Filter By</h3>
-
-                    <!-- Styles Filter -->
-                    <div class="mb-6">
-                        <p class="font-medium text-gray-700 mb-3 flex justify-between items-center cursor-pointer" onclick="document.getElementById('styles-list').classList.toggle('hidden')">
-                            Style <i data-lucide="chevron-down" class="w-4 h-4 text-gray-500"></i>
-                        </p>
-                        <div id="styles-list" class="space-y-2 mt-2">
-                            <!-- Populated by JS -->
-                        </div>
-                    </div>
-
-                    <!-- Occasions Filter -->
-                    <div class="mb-6">
-                        <p class="font-medium text-gray-700 mb-3 flex justify-between items-center cursor-pointer" onclick="document.getElementById('occasions-list').classList.toggle('hidden')">
-                            Occasion <i data-lucide="chevron-down" class="w-4 h-4 text-gray-500"></i>
-                        </p>
-                        <div id="occasions-list" class="space-y-2 mt-2">
-                            <!-- Populated by JS -->
-                        </div>
-                    </div>
-
-                    <!-- Colors Filter -->
-                    <div class="mb-6">
-                        <p class="font-medium text-gray-700 mb-3 flex justify-between items-center cursor-pointer" onclick="document.getElementById('colors-list').classList.toggle('hidden')">
-                            Color <i data-lucide="chevron-down" class="w-4 h-4 text-gray-500"></i>
-                        </p>
-                        <div id="colors-list" class="space-y-2 mt-2 grid grid-cols-3 gap-2">
-                            <!-- Populated by JS -->
-                        </div>
-                    </div>
+                <div class="flex flex-col md:flex-row gap-8">
                     
-                    <button onclick="clearFilters()" class="w-full mt-4 py-2 text-sm font-semibold text-white bg-accent rounded-lg hover:bg-opacity-90 transition duration-300">
-                        Clear All Filters
-                    </button>
-                </aside>
-                
-                <!-- Mobile Filters Modal (hidden by default) -->
-                <div id="mobile-filter-modal" class="fixed inset-0 z-[100] bg-white transform translate-x-full transition-transform duration-300 md:hidden">
-                    <div class="p-6 h-full overflow-y-auto">
-                        <div class="flex justify-between items-center mb-6 border-b pb-4">
-                            <h3 class="text-2xl font-bold text-gray-800">Filters</h3>
-                            <button id="mobile-filter-button-close" class="p-2 rounded-full hover:bg-gray-100" aria-label="Close Filters">
-                                <i data-lucide="x" class="w-6 h-6 text-gray-600"></i>
-                            </button>
+                    <!-- Desktop Filter Sidebar -->
+                    <aside id="desktop-filters" class="hidden md:block w-full md:w-1/4 filter-sidebar p-4 bg-white rounded-lg shadow-xl">
+                        <h3 class="text-xl font-semibold mb-6 border-b pb-3 text-accent">Filter By</h3>
+
+                        <!-- Styles Filter -->
+                        <div class="mb-6">
+                            <p class="font-medium text-gray-700 mb-3 flex justify-between items-center cursor-pointer" onclick="document.getElementById('styles-list').classList.toggle('hidden')">
+                                Style <i data-lucide="chevron-down" class="w-4 h-4 text-gray-500"></i>
+                            </p>
+                            <div id="styles-list" class="space-y-2 mt-2">
+                                <!-- Populated by JS -->
+                            </div>
+                        </div>
+
+                        <!-- Occasions Filter -->
+                        <div class="mb-6">
+                            <p class="font-medium text-gray-700 mb-3 flex justify-between items-center cursor-pointer" onclick="document.getElementById('occasions-list').classList.toggle('hidden')">
+                                Occasion <i data-lucide="chevron-down" class="w-4 h-4 text-gray-500"></i>
+                            </p>
+                            <div id="occasions-list" class="space-y-2 mt-2">
+                                <!-- Populated by JS -->
+                            </div>
+                        </div>
+
+                        <!-- Colors Filter -->
+                        <div class="mb-6">
+                            <p class="font-medium text-gray-700 mb-3 flex justify-between items-center cursor-pointer" onclick="document.getElementById('colors-list').classList.toggle('hidden')">
+                                Color <i data-lucide="chevron-down" class="w-4 h-4 text-gray-500"></i>
+                            </p>
+                            <div id="colors-list" class="space-y-2 mt-2 grid grid-cols-3 gap-2">
+                                <!-- Populated by JS -->
+                            </div>
                         </div>
                         
-                        <div id="mobile-styles-list" class="mb-6">
-                            <p class="font-bold text-gray-800 mb-3">Style</p>
-                            <!-- Populated by JS -->
-                        </div>
-
-                        <div id="mobile-occasions-list" class="mb-6">
-                            <p class="font-bold text-gray-800 mb-3">Occasion</p>
-                            <!-- Populated by JS -->
-                        </div>
-
-                        <div id="mobile-colors-list" class="mb-6">
-                            <p class="font-bold text-gray-800 mb-3">Color</p>
-                            <!-- Populated by JS -->
-                        </div>
-
-                        <div class="absolute bottom-0 left-0 right-0 p-4 bg-white border-t shadow-lg">
-                            <button onclick="clearFilters(); document.getElementById('mobile-filter-modal').classList.add('translate-x-full');" class="w-full mt-2 py-3 text-lg font-semibold text-white bg-accent rounded-full hover:bg-opacity-90 transition duration-300">
-                                Apply & View (10 Items)
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
-
-                <!-- Product Grid -->
-                <div class="w-full md:w-3/4">
-                    <div class="flex justify-between items-center mb-6">
-                        <p class="text-gray-600"><span id="product-count">10</span> Maxi Dresses Found</p>
-                        <select id="sort-select" onchange="renderProducts()" class="border border-gray-300 rounded-md p-2 text-sm focus:ring-accent focus:border-accent">
-                            <option value="newest">Sort by Newest</option>
-                            <option value="price-asc">Price: Low to High</option>
-                            <option value="price-desc">Price: High to Low</option>
-                            <option value="name-asc">Name: A-Z</option>
-                        </select>
-                    </div>
-
-                    <div id="product-grid" class="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
-                        <!-- Product cards will be rendered here by JS -->
-                    </div>
+                        <button onclick="clearFilters()" class="w-full mt-4 py-2 text-sm font-semibold text-white bg-accent rounded-lg hover:bg-opacity-90 transition duration-300">
+                            Clear All Filters
+                        </button>
+                    </aside>
                     
-                    <!-- No Results Message -->
-                    <div id="no-results" class="hidden text-center py-12 text-gray-500">
-                        <i data-lucide="box" class="w-12 h-12 mx-auto mb-4"></i>
-                        <p class="text-xl font-medium">No dresses match your current filters.</p>
-                        <button onclick="clearFilters()" class="mt-4 text-accent hover:underline">Reset Filters</button>
-                    </div>
-                </div>
+                    <!-- Mobile Filters Modal (hidden by default) -->
+                    <div id="mobile-filter-modal" class="fixed inset-0 z-[100] bg-white transform translate-x-full transition-transform duration-300 md:hidden">
+                        <div class="p-6 h-full overflow-y-auto">
+                            <div class="flex justify-between items-center mb-6 border-b pb-4">
+                                <h3 class="text-2xl font-bold text-gray-800">Filters</h3>
+                                <button id="mobile-filter-button-close" class="p-2 rounded-full hover:bg-gray-100" aria-label="Close Filters">
+                                    <i data-lucide="x" class="w-6 h-6 text-gray-600"></i>
+                                </button>
+                            </div>
+                            
+                            <div id="mobile-styles-list" class="mb-6">
+                                <p class="font-bold text-gray-800 mb-3">Style</p>
+                                <!-- Populated by JS -->
+                            </div>
 
-            </div>
-        </section>
+                            <div id="mobile-occasions-list" class="mb-6">
+                                <p class="font-bold text-gray-800 mb-3">Occasion</p>
+                                <!-- Populated by JS -->
+                            </div>
+
+                            <div id="mobile-colors-list" class="mb-6">
+                                <p class="font-bold text-gray-800 mb-3">Color</p>
+                                <!-- Populated by JS -->
+                            </div>
+
+                            <div class="absolute bottom-0 left-0 right-0 p-4 bg-white border-t shadow-lg">
+                                <button onclick="clearFilters(); document.getElementById('mobile-filter-modal').classList.add('translate-x-full');" class="w-full mt-2 py-3 text-lg font-semibold text-white bg-accent rounded-full hover:bg-opacity-90 transition duration-300">
+                                    Apply & View (<span id="mobile-product-count-display">0</span> Items)
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+
+                    <!-- Product Grid -->
+                    <div class="w-full md:w-3/4">
+                        <div class="flex justify-between items-center mb-6">
+                            <p class="text-gray-600"><span id="product-count">0</span> Maxi Dresses Found</p>
+                            <select id="sort-select" onchange="renderProducts()" class="border border-gray-300 rounded-md p-2 text-sm focus:ring-accent focus:border-accent">
+                                <option value="newest">Sort by Newest</option>
+                                <option value="price-asc">Price: Low to High</option>
+                                <option value="price-desc">Price: High to Low</option>
+                                <option value="name-asc">Name: A-Z</option>
+                            </select>
+                        </div>
+
+                        <div id="product-grid" class="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
+                            <!-- Product cards will be rendered here by JS -->
+                        </div>
+                        
+                        <!-- No Results Message -->
+                        <div id="no-results" class="hidden text-center py-12 text-gray-500">
+                            <i data-lucide="box" class="w-12 h-12 mx-auto mb-4"></i>
+                            <p class="text-xl font-medium">No dresses match your current filters.</p>
+                            <button onclick="clearFilters()" class="mt-4 text-accent hover:underline">Reset Filters</button>
+                        </div>
+                    </div>
+
+                </div>
+            </section>
+        </div>
 
         <!-- Product Description Modal (for AI generated content) -->
         <div id="description-modal" class="hidden fixed inset-0 z-[110] modal-overlay flex items-center justify-center p-4 transition-opacity duration-300">
@@ -263,6 +939,83 @@
                 <div id="modal-content" class="text-gray-700 text-base space-y-4 min-h-[100px]">
                     <!-- Content will be injected here (loading spinner or text) -->
                 </div>
+            </div>
+        </div>
+        
+        <!-- Admin Modal for Product CRUD -->
+        <div id="admin-modal" class="hidden fixed inset-0 z-[120] modal-overlay flex items-center justify-center p-4 transition-opacity duration-300">
+            <div class="bg-white rounded-xl shadow-2xl max-w-2xl w-full transform transition-all duration-300 p-6 sm:p-8 overflow-y-auto max-h-[90vh]">
+                <div class="flex justify-between items-start border-b pb-3 mb-4">
+                    <h3 id="admin-modal-title" class="text-2xl font-bold text-gray-800">Add New Product</h3>
+                    <button onclick="closeAdminModal()" class="p-1 rounded-full hover:bg-gray-100 transition" aria-label="Close modal">
+                        <i data-lucide="x" class="w-6 h-6 text-gray-600"></i>
+                    </button>
+                </div>
+                
+                <form id="product-form" onsubmit="event.preventDefault(); saveProduct()">
+                    <input type="hidden" id="product-id">
+
+                    <!-- Name and Image URL -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                        <div>
+                            <label for="product-name" class="block text-sm font-medium text-gray-700">Product Name</label>
+                            <input type="text" id="product-name" required class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-accent focus:border-accent">
+                        </div>
+                        <div>
+                            <label for="product-image" class="block text-sm font-medium text-gray-700">Image URL</label>
+                            <input type="url" id="product-image" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-accent focus:border-accent">
+                        </div>
+                    </div>
+
+                    <!-- Attributes -->
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
+                        <div>
+                            <label for="product-style" class="block text-sm font-medium text-gray-700">Style</label>
+                            <input type="text" id="product-style" required class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-accent focus:border-accent">
+                        </div>
+                        <div>
+                            <label for="product-occasion" class="block text-sm font-medium text-gray-700">Occasion</label>
+                            <input type="text" id="product-occasion" required class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-accent focus:border-accent">
+                        </div>
+                        <div>
+                            <label for="product-color" class="block text-sm font-medium text-gray-700">Color</label>
+                            <input type="text" id="product-color" required class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-accent focus:border-accent">
+                        </div>
+                        <div>
+                            <label for="product-fabric" class="block text-sm font-medium text-gray-700">Fabric</label>
+                            <input type="text" id="product-fabric" required class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-accent focus:border-accent">
+                        </div>
+                    </div>
+
+                    <!-- Variants Section -->
+                    <div class="mb-4 p-4 border border-gray-200 rounded-lg">
+                        <div class="flex justify-between items-center mb-3">
+                            <h4 class="text-md font-semibold text-gray-800">Product Variants (Size, Price, Stock)</h4>
+                            <button type="button" onclick="addVariantField()" class="text-sm text-accent hover:underline flex items-center">
+                                <i data-lucide="plus" class="w-4 h-4 mr-1"></i> Add Variant
+                            </button>
+                        </div>
+                        <div id="variants-container" class="space-y-3">
+                            <!-- Variant input fields will be added here -->
+                        </div>
+                    </div>
+
+                    <!-- AI-Generated Description -->
+                    <div class="mb-4">
+                        <label for="product-description" class="block text-sm font-medium text-gray-700">Description (Optional)</label>
+                        <textarea id="product-description" rows="3" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-accent focus:border-accent"></textarea>
+                        <button type="button" onclick="triggerAdminAIDescription()" class="mt-2 text-xs font-semibold text-accent border border-accent py-1 px-3 rounded-full hover:bg-accent hover:text-white transition duration-300">
+                            Auto-Generate Copy with AI ✨
+                        </button>
+                    </div>
+                    
+                    <div id="admin-error-message" class="text-red-500 text-sm mb-4 hidden"></div>
+
+                    <div class="flex justify-end space-x-3 mt-6">
+                        <button type="button" onclick="closeAdminModal()" class="py-2 px-4 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition">Cancel</button>
+                        <button type="submit" id="admin-save-button" class="py-2 px-6 bg-accent text-white rounded-lg font-semibold hover:bg-opacity-90 transition">Save Product</button>
+                    </div>
+                </form>
             </div>
         </div>
         
@@ -318,317 +1071,5 @@
         </footer>
 
     </main>
-
-    <script>
-        // Initialize Lucide Icons
-        lucide.createIcons();
-
-        // Global state for filters
-        let activeFilters = {
-            styles: [],
-            occasions: [],
-            colors: [],
-        };
-
-        // --- GEMINI API INTEGRATION ---
-
-        // Reusable loading spinner HTML
-        const loadingSpinner = `
-            <div class="flex flex-col items-center justify-center h-full py-8">
-                <svg class="animate-spin -ml-1 mr-3 h-8 w-8 text-accent" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                <p class="mt-4 text-gray-600 font-medium">Generating bespoke copy...</p>
-            </div>
-        `;
-
-        function openModal(dressName) {
-            document.getElementById('modal-product-name').textContent = dressName;
-            document.getElementById('modal-content').innerHTML = loadingSpinner;
-            document.getElementById('description-modal').classList.remove('hidden');
-        }
-
-        function closeModal() {
-            document.getElementById('description-modal').classList.add('hidden');
-        }
-
-        async function generateDescription(product) {
-            openModal(product.name);
-
-            // LLM Configuration
-            const systemPrompt = "You are a world-class fashion copywriter for a high-end e-commerce site specializing in flowing maxi dresses. Your task is to write a single, engaging, and detailed product description (under 100 words) that captures the mood, utility, and quality of the dress based on its attributes. Focus on rich sensory language, fit, and elegance.";
-            
-            const userQuery = `Write a compelling product description for a maxi dress with the following attributes: 
-                Name: ${product.name}, 
-                Style: ${product.style}, 
-                Occasion: ${product.occasion}, 
-                Color: ${product.color}, 
-                Fabric: ${product.fabric}.`;
-
-            const payload = {
-                contents: [{ parts: [{ text: userQuery }] }],
-                systemInstruction: {
-                    parts: [{ text: systemPrompt }]
-                },
-            };
-
-            const apiUrl = `${GEMINI_API_URL}${apiKey}`;
-            
-            // Exponential backoff retry logic
-            const maxRetries = 3;
-            for (let i = 0; i < maxRetries; i++) {
-                try {
-                    const response = await fetch(apiUrl, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload)
-                    });
-
-                    if (!response.ok) {
-                        throw new Error(`HTTP error! status: ${response.status}`);
-                    }
-
-                    const result = await response.json();
-                    const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
-
-                    if (text) {
-                        document.getElementById('modal-content').innerHTML = `<p>${text.replace(/\n/g, '<br>')}</p>`;
-                        return; // Success, exit function
-                    } else {
-                        throw new Error("API response structure unexpected or missing text.");
-                    }
-                } catch (error) {
-                    console.error(`Attempt ${i + 1} failed:`, error);
-                    if (i < maxRetries - 1) {
-                        // Wait for 2^i seconds before retrying
-                        const delay = Math.pow(2, i) * 1000;
-                        await new Promise(resolve => setTimeout(resolve, delay));
-                    } else {
-                        document.getElementById('modal-content').innerHTML = `
-                            <p class="text-red-500 font-semibold">
-                                <i data-lucide="alert-triangle" class="w-5 h-5 inline mr-2"></i> 
-                                Failed to generate copy. Please try again.
-                            </p>
-                            <p class="text-sm mt-2">Error: ${error.message}</p>
-                        `;
-                        lucide.createIcons();
-                    }
-                }
-            }
-        }
-
-
-        // --- FILTER RENDERING AND LOGIC (Mostly Unchanged) ---
-
-        function renderFilterOptions(options, type, containerId) {
-            const container = document.getElementById(containerId);
-            if (!container) return;
-
-            // Clear existing content
-            container.innerHTML = '';
-
-            options.forEach(option => {
-                const isChecked = activeFilters[type].includes(option);
-                
-                let htmlContent = '';
-
-                if (type === 'colors') {
-                    // Special handling for color swatches
-                    const colorMap = {
-                        "Cream": "bg-[#f5e5c7]", "Navy": "bg-blue-700", "Floral": "bg-green-300", 
-                        "Black": "bg-black", "White": "bg-white", "Ivory": "bg-[#f0fff0]", 
-                        "Terracotta": "bg-[#b87333]", "Gold": "bg-yellow-500", "Printed": "bg-pink-300"
-                    };
-                    const bgColor = colorMap[option] || 'bg-gray-400';
-                    const borderColor = option === 'White' || option === 'Ivory' ? 'border-gray-400' : 'border-transparent';
-                    const ringClass = isChecked ? 'ring-2 ring-offset-1 ring-accent' : '';
-                    
-                    htmlContent = `
-                        <button onclick="toggleFilter('${type}', '${option}')" 
-                                class="w-full h-8 ${bgColor} border ${borderColor} rounded-full flex items-center justify-center relative ${ringClass}"
-                                aria-label="Filter by ${option}">
-                            ${option === 'Black' && isChecked ? '<i data-lucide="check" class="w-3 h-3 text-white"></i>' : (isChecked && option !== 'Black' ? '<i data-lucide="check" class="w-3 h-3 text-black"></i>' : '')}
-                        </button>
-                    `;
-                } else {
-                    // Checkbox/Text buttons for styles and occasions
-                    htmlContent = `
-                        <label class="flex items-center cursor-pointer text-sm text-gray-600 hover:text-accent transition duration-150">
-                            <input type="checkbox" ${isChecked ? 'checked' : ''} onchange="toggleFilter('${type}', '${option}')" 
-                                class="mr-2 h-4 w-4 text-accent border-gray-300 rounded focus:ring-accent">
-                            ${option}
-                        </label>
-                    `;
-                }
-
-                const tempDiv = document.createElement('div');
-                tempDiv.innerHTML = htmlContent.trim();
-                if (type === 'colors') {
-                    // For colors, we use the button directly inside the grid
-                    container.appendChild(tempDiv.firstChild);
-                } else {
-                    // For others, wrap content in a div for layout
-                    container.appendChild(tempDiv.firstChild);
-                }
-            });
-            lucide.createIcons(); // Re-render icons after adding content
-        }
-
-        function toggleFilter(type, value) {
-            const index = activeFilters[type].indexOf(value);
-            if (index > -1) {
-                activeFilters[type].splice(index, 1); // Remove
-            } else {
-                activeFilters[type].push(value); // Add
-            }
-            renderFilters(); // Re-render filters to update state visually
-            renderProducts(); // Re-render products to apply filter
-        }
-
-        function clearFilters() {
-            activeFilters = { styles: [], occasions: [], colors: [] };
-            renderFilters();
-            renderProducts();
-        }
-
-        function renderProducts() {
-            const grid = document.getElementById('product-grid');
-            const productCount = document.getElementById('product-count');
-            const noResults = document.getElementById('no-results');
-            
-            if (!grid) return;
-
-            let filteredProducts = maxiDresses;
-
-            // Apply Filters
-            if (activeFilters.styles.length > 0) {
-                filteredProducts = filteredProducts.filter(p => activeFilters.styles.includes(p.style));
-            }
-            if (activeFilters.occasions.length > 0) {
-                filteredProducts = filteredProducts.filter(p => activeFilters.occasions.includes(p.occasion));
-            }
-            if (activeFilters.colors.length > 0) {
-                filteredProducts = filteredProducts.filter(p => activeFilters.colors.includes(p.color));
-            }
-            
-            // Apply Sorting
-            const sortValue = document.getElementById('sort-select').value;
-            filteredProducts.sort((a, b) => {
-                if (sortValue === 'price-asc') return a.price - b.price;
-                if (sortValue === 'price-desc') return b.price - a.price;
-                if (sortValue === 'name-asc') return a.name.localeCompare(b.name);
-                return 0; // newest/default
-            });
-
-
-            grid.innerHTML = '';
-
-            if (filteredProducts.length === 0) {
-                noResults.classList.remove('hidden');
-                productCount.textContent = '0';
-                return;
-            }
-
-            noResults.classList.add('hidden');
-            productCount.textContent = filteredProducts.length;
-
-            filteredProducts.forEach(product => {
-                const productCard = document.createElement('div');
-                productCard.className = 'group bg-white rounded-xl overflow-hidden shadow-lg hover:shadow-2xl transition duration-300 transform hover:-translate-y-1';
-                
-                // Add the AI button logic here
-                productCard.innerHTML = `
-                    <div class="relative overflow-hidden aspect-[2/3]">
-                        <img src="${product.imageUrl}" onerror="this.onerror=null; this.src='https://placehold.co/400x600/ccc/333?text=Image+Error';" 
-                             alt="${product.name}" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105">
-                        <button class="absolute top-3 right-3 p-2 bg-white rounded-full text-gray-800 opacity-0 group-hover:opacity-100 transition duration-300 transform translate-x-3 group-hover:translate-x-0" aria-label="Quick View">
-                            <i data-lucide="eye" class="w-5 h-5"></i>
-                        </button>
-                    </div>
-                    <div class="p-4 text-center">
-                        <h4 class="text-sm font-medium text-gray-900 truncate">${product.name}</h4>
-                        <p class="text-xs text-gray-500 mb-2">${product.style} &bull; ${product.occasion}</p>
-                        <p class="text-lg font-bold text-accent">$${product.price.toFixed(2)}</p>
-                        <button class="w-full mt-3 py-2 text-sm font-semibold text-white bg-accent rounded-full opacity-0 group-hover:opacity-100 transition duration-300 transform translate-y-2 group-hover:translate-y-0" aria-label="Add to Cart">
-                            Add to Cart
-                        </button>
-                        <button onclick="generateDescription({id: ${product.id}, name: '${product.name}', style: '${product.style}', occasion: '${product.occasion}', color: '${product.color}', fabric: '${product.fabric}'})"
-                                class="w-full mt-3 py-2 text-xs font-semibold text-accent border border-accent rounded-full hover:bg-accent hover:text-white transition duration-300 flex items-center justify-center">
-                            Generate Description ✨
-                        </button>
-                    </div>
-                `;
-                grid.appendChild(productCard);
-            });
-            lucide.createIcons(); // Re-render icons for new cards
-        }
-
-        function renderFilters() {
-            // Desktop
-            renderFilterOptions(styles, 'styles', 'styles-list');
-            renderFilterOptions(occasions, 'occasions', 'occasions-list');
-            renderFilterOptions(colors, 'colors', 'colors-list');
-
-            // Mobile
-            renderFilterOptions(styles, 'styles', 'mobile-styles-list');
-            renderFilterOptions(occasions, 'occasions', 'mobile-occasions-list');
-            renderFilterOptions(colors, 'colors', 'mobile-colors-list');
-
-            // Update mobile button count
-            const totalActiveFilters = activeFilters.styles.length + activeFilters.occasions.length + activeFilters.colors.length;
-            const mobileFilterButton = document.getElementById('mobile-filter-button-open');
-            if (mobileFilterButton) {
-                mobileFilterButton.innerHTML = `Filters (${totalActiveFilters}) <i data-lucide="filter" class="w-4 h-4"></i>`;
-            }
-            
-            // Update mobile modal button with count
-            const mobileModalButton = document.querySelector('#mobile-filter-modal button[onclick*="Apply"]');
-            if (mobileModalButton) {
-                // Pre-calculate count for the button text
-                const currentFilteredCount = maxiDresses.filter(p => 
-                    (activeFilters.styles.length === 0 || activeFilters.styles.includes(p.style)) &&
-                    (activeFilters.occasions.length === 0 || activeFilters.occasions.includes(p.occasion)) &&
-                    (activeFilters.colors.length === 0 || activeFilters.colors.includes(p.color))
-                ).length;
-                mobileModalButton.textContent = `Apply & View (${currentFilteredCount} Items)`;
-            }
-        }
-        
-        // --- UI UTILITIES ---
-
-        function setupMobileToggle() {
-            const menuBtn = document.getElementById('mobile-menu-button');
-            const menu = document.getElementById('mobile-menu');
-            const filterOpenBtn = document.getElementById('mobile-filter-button-open');
-            const filterCloseBtn = document.getElementById('mobile-filter-button-close');
-            const filterModal = document.getElementById('mobile-filter-modal');
-
-            menuBtn.addEventListener('click', () => menu.classList.toggle('hidden'));
-            
-            // Filter Open from Mobile Menu
-            if (filterOpenBtn) {
-                filterOpenBtn.addEventListener('click', () => {
-                    filterModal.classList.remove('translate-x-full');
-                });
-            }
-            // Filter Close from Mobile Modal
-            if (filterCloseBtn) {
-                filterCloseBtn.addEventListener('click', () => {
-                    filterModal.classList.add('translate-x-full');
-                });
-            }
-        }
-        
-        // --- INITIALIZATION ---
-        window.onload = function() {
-            document.getElementById('current-year').textContent = new Date().getFullYear();
-            renderFilters();
-            renderProducts();
-            setupMobileToggle();
-        };
-
-    </script>
 </body>
 </html>
-
