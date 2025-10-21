@@ -1,1 +1,634 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Maxi Dress Collection - Elegance Redefined</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Load Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        /* Custom font import and application */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            overflow-x: hidden;
+            background-color: #fffaf0; /* Soft off-white background */
+        }
+        .text-accent { color: #8B4513; } /* Earthy brown/terracotta for accent */
+        .bg-accent { background-color: #8B4513; }
+        .border-accent { border-color: #8B4513; }
+
+        /* Custom scrollbar for filter sidebar on desktop */
+        .filter-sidebar {
+            height: calc(100vh - 80px); /* Adjust height based on sticky header */
+            position: sticky;
+            top: 80px;
+            overflow-y: auto;
+            scrollbar-width: thin; /* Firefox */
+            scrollbar-color: #8B4513 #f5f5f5; /* Firefox */
+        }
+        .filter-sidebar::-webkit-scrollbar {
+            width: 8px;
+        }
+        .filter-sidebar::-webkit-scrollbar-thumb {
+            background-color: #8B4513;
+            border-radius: 20px;
+        }
+        .filter-sidebar::-webkit-scrollbar-track {
+            background: #f5f5f5;
+        }
+        /* Style for the modal overlay */
+        .modal-overlay {
+            background-color: rgba(0, 0, 0, 0.7);
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Mock Product Data -->
+    <script>
+        // Global Constants for Gemini API
+        const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=";
+        const apiKey = "" // API key is handled by the environment if left blank.
+
+        const maxiDresses = [
+            { id: 1, name: "The Riviera A-Line", style: "A-Line", occasion: "Casual", color: "Cream", price: 79.99, imageUrl: "https://placehold.co/400x600/f5e5c7/333?text=Riviera+Maxi", fabric: "Linen-Blend", description: "Default casual chic maxi dress." },
+            { id: 2, name: "Empire Chiffon Gown", style: "Empire Waist", occasion: "Evening", color: "Navy", price: 129.50, imageUrl: "https://placehold.co/400x600/87cefa/333?text=Chiffon+Gown", fabric: "Silk Chiffon", description: "Default formal navy gown." },
+            { id: 3, name: "Bohemian Wrap Dress", style: "Wrap", occasion: "Beach", color: "Floral", price: 89.99, imageUrl: "https://placehold.co/400x600/98fb98/333?text=Boho+Wrap", fabric: "Rayon", description: "Default beach cover-up wrap dress." },
+            { id: 4, name: "Silk Slip Maxi", style: "Slip", occasion: "Evening", color: "Black", price: 159.00, imageUrl: "https://placehold.co/400x600/333333/fff?text=Silk+Slip", fabric: "Heavy Silk", description: "Default simple black slip dress." },
+            { id: 5, name: "Linen Tiered Dress", style: "Tiered", occasion: "Casual", color: "White", price: 69.99, imageUrl: "https://placehold.co/400x600/eee/333?text=Linen+Tiered", fabric: "Pure Linen", description: "Default light and breezy linen dress." },
+            { id: 6, name: "Bridal Rehearsal Dress", style: "A-Line", occasion: "Wedding Guest", color: "Ivory", price: 185.00, imageUrl: "https://placehold.co/400x600/f0fff0/333?text=Bridal+Maxi", fabric: "Lace Overlay", description: "Default elegant rehearsal dinner dress." },
+            { id: 7, name: "Knitted Halter Maxi", style: "Halter", occasion: "Casual", color: "Terracotta", price: 95.00, imageUrl: "https://placehold.co/400x600/b87333/fff?text=Halter+Knit", fabric: "Ribbed Knit", description: "Default comfy knit halter dress." },
+            { id: 8, name: "V-Neck Jersey Maxi", style: "A-Line", occasion: "Casual", color: "Black", price: 59.99, imageUrl: "https://placehold.co/400x600/444/fff?text=Jersey+V-Neck", fabric: "Soft Jersey", description: "Default everyday V-neck dress." },
+            { id: 9, name: "Sequined Ballgown", style: "Empire Waist", occasion: "Evening", color: "Gold", price: 299.00, imageUrl: "https://placehold.co/400x600/ffd700/333?text=Sequined+Gown", fabric: "Net Sequins", description: "Default show-stopping gold dress." },
+            { id: 10, name: "Print Summer Dress", style: "Wrap", occasion: "Beach", color: "Printed", price: 75.00, imageUrl: "https://placehold.co/400x600/ffc0cb/333?text=Summer+Print", fabric: "Light Cotton", description: "Default vibrant summer print dress." },
+        ];
+
+        // Unique filter options
+        const styles = [...new Set(maxiDresses.map(d => d.style))];
+        const occasions = [...new Set(maxiDresses.map(d => d.occasion))];
+        const colors = [...new Set(maxiDresses.map(d => d.color))];
+    </script>
+
+    <!-- 1. Header & Navigation -->
+    <header class="sticky top-0 z-50 bg-white shadow-md">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-20">
+                <!-- Logo -->
+                <a href="#" class="text-3xl font-extrabold tracking-tight text-accent">MAXI</a>
+
+                <!-- Desktop Navigation -->
+                <nav class="hidden md:flex space-x-8">
+                    <a href="#" class="text-gray-600 hover:text-accent font-medium transition duration-150">Shop All</a>
+                    <a href="#" class="text-gray-600 hover:text-accent font-medium transition duration-150">New Arrivals</a>
+                    <a href="#" class="text-gray-600 hover:text-accent font-medium transition duration-150">Evening</a>
+                    <a href="#" class="text-gray-600 hover:text-accent font-medium transition duration-150">Casual</a>
+                    <a href="#" class="text-gray-600 hover:text-accent font-medium transition duration-150">Sale</a>
+                </nav>
+
+                <!-- Utility Icons -->
+                <div class="flex items-center space-x-4">
+                    <button class="p-2 rounded-full hover:bg-gray-100 transition duration-150 hidden md:block" aria-label="Search">
+                        <i data-lucide="search" class="w-5 h-5 text-gray-600"></i>
+                    </button>
+                    <button class="p-2 rounded-full hover:bg-gray-100 transition duration-150 hidden md:block" aria-label="Account">
+                        <i data-lucide="user" class="w-5 h-5 text-gray-600"></i>
+                    </button>
+                    <button class="p-2 rounded-full hover:bg-gray-100 transition duration-150 relative" aria-label="Cart">
+                        <i data-lucide="shopping-cart" class="w-5 h-5 text-gray-600"></i>
+                        <span class="absolute top-0 right-0 inline-flex items-center justify-center px-2 py-0.5 text-xs font-bold leading-none text-white transform translate-x-1/2 -translate-y-1/2 bg-accent rounded-full">3</span>
+                    </button>
+                    <!-- Mobile Menu Button -->
+                    <button id="mobile-menu-button" class="md:hidden p-2 rounded-full hover:bg-gray-100 transition duration-150" aria-label="Menu">
+                        <i data-lucide="menu" class="w-6 h-6 text-gray-600"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+        <!-- Mobile Menu (Hidden by default) -->
+        <div id="mobile-menu" class="hidden md:hidden bg-white shadow-lg border-t border-gray-100">
+            <div class="px-2 pt-2 pb-3 space-y-1 sm:px-3">
+                <a href="#" class="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:bg-gray-50 hover:text-accent">Shop All</a>
+                <a href="#" class="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:bg-gray-50 hover:text-accent">New Arrivals</a>
+                <a href="#" class="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:bg-gray-50 hover:text-accent">Evening</a>
+                <a href="#" class="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:bg-gray-50 hover:text-accent">Casual</a>
+                <a href="#" class="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:bg-gray-50 hover:text-accent">Sale</a>
+                <button id="mobile-filter-button-open" class="w-full text-left px-3 py-2 rounded-md text-base font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 flex items-center justify-between">
+                    Filters
+                    <i data-lucide="filter" class="w-4 h-4"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- 2. Hero Section -->
+    <main>
+        <div class="relative h-[60vh] md:h-[80vh] bg-cover bg-center" style="background-image: url('https://placehold.co/1600x900/f5e5c7/8B4513?text=The+Maxi+Movement');">
+            <div class="absolute inset-0 bg-black bg-opacity-30 flex items-center justify-center">
+                <div class="text-center p-8">
+                    <h1 class="text-4xl sm:text-6xl font-bold text-white mb-4 drop-shadow-lg">
+                        Effortless Elegance: The Maxi Collection
+                    </h1>
+                    <p class="text-lg sm:text-xl text-white mb-8 drop-shadow-md max-w-2xl mx-auto">
+                        Discover the perfect drape, fit, and flow for every occasion, from beach days to black-tie events.
+                    </p>
+                    <a href="#shop" class="inline-block bg-white text-accent font-semibold py-3 px-8 rounded-full shadow-lg hover:bg-gray-100 transition duration-300 transform hover:scale-105">
+                        Shop The New Collection
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3. Main Product Listing and Filters -->
+        <section id="shop" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 md:py-16">
+            <h2 class="text-3xl font-bold text-gray-800 mb-8 md:mb-12">All Maxi Dresses</h2>
+            
+            <div class="flex flex-col md:flex-row gap-8">
+                
+                <!-- Desktop Filter Sidebar -->
+                <aside id="desktop-filters" class="hidden md:block w-full md:w-1/4 filter-sidebar p-4 bg-white rounded-lg shadow-xl">
+                    <h3 class="text-xl font-semibold mb-6 border-b pb-3 text-accent">Filter By</h3>
+
+                    <!-- Styles Filter -->
+                    <div class="mb-6">
+                        <p class="font-medium text-gray-700 mb-3 flex justify-between items-center cursor-pointer" onclick="document.getElementById('styles-list').classList.toggle('hidden')">
+                            Style <i data-lucide="chevron-down" class="w-4 h-4 text-gray-500"></i>
+                        </p>
+                        <div id="styles-list" class="space-y-2 mt-2">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+
+                    <!-- Occasions Filter -->
+                    <div class="mb-6">
+                        <p class="font-medium text-gray-700 mb-3 flex justify-between items-center cursor-pointer" onclick="document.getElementById('occasions-list').classList.toggle('hidden')">
+                            Occasion <i data-lucide="chevron-down" class="w-4 h-4 text-gray-500"></i>
+                        </p>
+                        <div id="occasions-list" class="space-y-2 mt-2">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+
+                    <!-- Colors Filter -->
+                    <div class="mb-6">
+                        <p class="font-medium text-gray-700 mb-3 flex justify-between items-center cursor-pointer" onclick="document.getElementById('colors-list').classList.toggle('hidden')">
+                            Color <i data-lucide="chevron-down" class="w-4 h-4 text-gray-500"></i>
+                        </p>
+                        <div id="colors-list" class="space-y-2 mt-2 grid grid-cols-3 gap-2">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+                    
+                    <button onclick="clearFilters()" class="w-full mt-4 py-2 text-sm font-semibold text-white bg-accent rounded-lg hover:bg-opacity-90 transition duration-300">
+                        Clear All Filters
+                    </button>
+                </aside>
+                
+                <!-- Mobile Filters Modal (hidden by default) -->
+                <div id="mobile-filter-modal" class="fixed inset-0 z-[100] bg-white transform translate-x-full transition-transform duration-300 md:hidden">
+                    <div class="p-6 h-full overflow-y-auto">
+                        <div class="flex justify-between items-center mb-6 border-b pb-4">
+                            <h3 class="text-2xl font-bold text-gray-800">Filters</h3>
+                            <button id="mobile-filter-button-close" class="p-2 rounded-full hover:bg-gray-100" aria-label="Close Filters">
+                                <i data-lucide="x" class="w-6 h-6 text-gray-600"></i>
+                            </button>
+                        </div>
+                        
+                        <div id="mobile-styles-list" class="mb-6">
+                            <p class="font-bold text-gray-800 mb-3">Style</p>
+                            <!-- Populated by JS -->
+                        </div>
+
+                        <div id="mobile-occasions-list" class="mb-6">
+                            <p class="font-bold text-gray-800 mb-3">Occasion</p>
+                            <!-- Populated by JS -->
+                        </div>
+
+                        <div id="mobile-colors-list" class="mb-6">
+                            <p class="font-bold text-gray-800 mb-3">Color</p>
+                            <!-- Populated by JS -->
+                        </div>
+
+                        <div class="absolute bottom-0 left-0 right-0 p-4 bg-white border-t shadow-lg">
+                            <button onclick="clearFilters(); document.getElementById('mobile-filter-modal').classList.add('translate-x-full');" class="w-full mt-2 py-3 text-lg font-semibold text-white bg-accent rounded-full hover:bg-opacity-90 transition duration-300">
+                                Apply & View (10 Items)
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+
+                <!-- Product Grid -->
+                <div class="w-full md:w-3/4">
+                    <div class="flex justify-between items-center mb-6">
+                        <p class="text-gray-600"><span id="product-count">10</span> Maxi Dresses Found</p>
+                        <select id="sort-select" onchange="renderProducts()" class="border border-gray-300 rounded-md p-2 text-sm focus:ring-accent focus:border-accent">
+                            <option value="newest">Sort by Newest</option>
+                            <option value="price-asc">Price: Low to High</option>
+                            <option value="price-desc">Price: High to Low</option>
+                            <option value="name-asc">Name: A-Z</option>
+                        </select>
+                    </div>
+
+                    <div id="product-grid" class="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
+                        <!-- Product cards will be rendered here by JS -->
+                    </div>
+                    
+                    <!-- No Results Message -->
+                    <div id="no-results" class="hidden text-center py-12 text-gray-500">
+                        <i data-lucide="box" class="w-12 h-12 mx-auto mb-4"></i>
+                        <p class="text-xl font-medium">No dresses match your current filters.</p>
+                        <button onclick="clearFilters()" class="mt-4 text-accent hover:underline">Reset Filters</button>
+                    </div>
+                </div>
+
+            </div>
+        </section>
+
+        <!-- Product Description Modal (for AI generated content) -->
+        <div id="description-modal" class="hidden fixed inset-0 z-[110] modal-overlay flex items-center justify-center p-4 transition-opacity duration-300">
+            <div class="bg-white rounded-xl shadow-2xl max-w-lg w-full transform transition-all duration-300 p-6 sm:p-8">
+                <div class="flex justify-between items-start border-b pb-3 mb-4">
+                    <h3 class="text-2xl font-bold text-gray-800 flex items-center">
+                        <i data-lucide="sparkles" class="w-6 h-6 mr-2 text-yellow-500"></i> AI Product Copy
+                    </h3>
+                    <button onclick="closeModal()" class="p-1 rounded-full hover:bg-gray-100 transition" aria-label="Close modal">
+                        <i data-lucide="x" class="w-6 h-6 text-gray-600"></i>
+                    </button>
+                </div>
+                
+                <h4 id="modal-product-name" class="text-xl font-semibold mb-3 text-accent"></h4>
+                <div id="modal-content" class="text-gray-700 text-base space-y-4 min-h-[100px]">
+                    <!-- Content will be injected here (loading spinner or text) -->
+                </div>
+            </div>
+        </div>
+        
+        <!-- 4. Footer -->
+        <footer class="bg-gray-900 text-white mt-16">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+                <div class="grid grid-cols-2 md:grid-cols-5 gap-8 border-b border-gray-700 pb-8">
+                    
+                    <div class="col-span-2 md:col-span-1">
+                        <h4 class="text-2xl font-extrabold mb-3 text-accent">MAXI</h4>
+                        <p class="text-gray-400 text-sm">Flowing fabrics, timeless styles.</p>
+                        <div class="flex space-x-4 mt-4">
+                            <a href="#" class="text-gray-400 hover:text-white"><i data-lucide="instagram" class="w-5 h-5"></i></a>
+                            <a href="#" class="text-gray-400 hover:text-white"><i data-lucide="facebook" class="w-5 h-5"></i></a>
+                            <a href="#" class="text-gray-400 hover:text-white"><i data-lucide="twitter" class="w-5 h-5"></i></a>
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <h5 class="font-semibold mb-4 text-lg">Shop</h5>
+                        <ul class="space-y-2 text-sm">
+                            <li><a href="#" class="text-gray-400 hover:text-white transition">Wedding Guest</a></li>
+                            <li><a href="#" class="text-gray-400 hover:text-white transition">A-Line</a></li>
+                            <li><a href="#" class="text-gray-400 hover:text-white transition">Printed Maxis</a></li>
+                            <li><a href="#" class="text-gray-400 hover:text-white transition">Best Sellers</a></li>
+                        </ul>
+                    </div>
+
+                    <div>
+                        <h5 class="font-semibold mb-4 text-lg">Service</h5>
+                        <ul class="space-y-2 text-sm">
+                            <li><a href="#" class="text-gray-400 hover:text-white transition">Size Guide</a></li>
+                            <li><a href="#" class="text-gray-400 hover:text-white transition">Shipping & Returns</a></li>
+                            <li><a href="#" class="text-gray-400 hover:text-white transition">FAQ</a></li>
+                            <li><a href="#" class="text-gray-400 hover:text-white transition">Contact Us</a></li>
+                        </ul>
+                    </div>
+
+                    <div class="col-span-2 md:col-span-1">
+                        <h5 class="font-semibold mb-4 text-lg">Newsletter</h5>
+                        <p class="text-gray-400 text-sm mb-4">Get 15% off your first order.</p>
+                        <form>
+                            <input type="email" placeholder="Enter your email" class="w-full p-2 rounded-md bg-gray-800 border border-gray-700 text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-accent">
+                            <button type="submit" class="w-full mt-2 bg-accent py-2 rounded-md font-semibold hover:bg-opacity-90 transition">Subscribe</button>
+                        </form>
+                    </div>
+
+                </div>
+                <div class="mt-8 text-center text-sm text-gray-500">
+                    &copy; <span id="current-year"></span> Maxi Dress Co. All rights reserved.
+                </div>
+            </div>
+        </footer>
+
+    </main>
+
+    <script>
+        // Initialize Lucide Icons
+        lucide.createIcons();
+
+        // Global state for filters
+        let activeFilters = {
+            styles: [],
+            occasions: [],
+            colors: [],
+        };
+
+        // --- GEMINI API INTEGRATION ---
+
+        // Reusable loading spinner HTML
+        const loadingSpinner = `
+            <div class="flex flex-col items-center justify-center h-full py-8">
+                <svg class="animate-spin -ml-1 mr-3 h-8 w-8 text-accent" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <p class="mt-4 text-gray-600 font-medium">Generating bespoke copy...</p>
+            </div>
+        `;
+
+        function openModal(dressName) {
+            document.getElementById('modal-product-name').textContent = dressName;
+            document.getElementById('modal-content').innerHTML = loadingSpinner;
+            document.getElementById('description-modal').classList.remove('hidden');
+        }
+
+        function closeModal() {
+            document.getElementById('description-modal').classList.add('hidden');
+        }
+
+        async function generateDescription(product) {
+            openModal(product.name);
+
+            // LLM Configuration
+            const systemPrompt = "You are a world-class fashion copywriter for a high-end e-commerce site specializing in flowing maxi dresses. Your task is to write a single, engaging, and detailed product description (under 100 words) that captures the mood, utility, and quality of the dress based on its attributes. Focus on rich sensory language, fit, and elegance.";
+            
+            const userQuery = `Write a compelling product description for a maxi dress with the following attributes: 
+                Name: ${product.name}, 
+                Style: ${product.style}, 
+                Occasion: ${product.occasion}, 
+                Color: ${product.color}, 
+                Fabric: ${product.fabric}.`;
+
+            const payload = {
+                contents: [{ parts: [{ text: userQuery }] }],
+                systemInstruction: {
+                    parts: [{ text: systemPrompt }]
+                },
+            };
+
+            const apiUrl = `${GEMINI_API_URL}${apiKey}`;
+            
+            // Exponential backoff retry logic
+            const maxRetries = 3;
+            for (let i = 0; i < maxRetries; i++) {
+                try {
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+
+                    const result = await response.json();
+                    const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+
+                    if (text) {
+                        document.getElementById('modal-content').innerHTML = `<p>${text.replace(/\n/g, '<br>')}</p>`;
+                        return; // Success, exit function
+                    } else {
+                        throw new Error("API response structure unexpected or missing text.");
+                    }
+                } catch (error) {
+                    console.error(`Attempt ${i + 1} failed:`, error);
+                    if (i < maxRetries - 1) {
+                        // Wait for 2^i seconds before retrying
+                        const delay = Math.pow(2, i) * 1000;
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                    } else {
+                        document.getElementById('modal-content').innerHTML = `
+                            <p class="text-red-500 font-semibold">
+                                <i data-lucide="alert-triangle" class="w-5 h-5 inline mr-2"></i> 
+                                Failed to generate copy. Please try again.
+                            </p>
+                            <p class="text-sm mt-2">Error: ${error.message}</p>
+                        `;
+                        lucide.createIcons();
+                    }
+                }
+            }
+        }
+
+
+        // --- FILTER RENDERING AND LOGIC (Mostly Unchanged) ---
+
+        function renderFilterOptions(options, type, containerId) {
+            const container = document.getElementById(containerId);
+            if (!container) return;
+
+            // Clear existing content
+            container.innerHTML = '';
+
+            options.forEach(option => {
+                const isChecked = activeFilters[type].includes(option);
+                
+                let htmlContent = '';
+
+                if (type === 'colors') {
+                    // Special handling for color swatches
+                    const colorMap = {
+                        "Cream": "bg-[#f5e5c7]", "Navy": "bg-blue-700", "Floral": "bg-green-300", 
+                        "Black": "bg-black", "White": "bg-white", "Ivory": "bg-[#f0fff0]", 
+                        "Terracotta": "bg-[#b87333]", "Gold": "bg-yellow-500", "Printed": "bg-pink-300"
+                    };
+                    const bgColor = colorMap[option] || 'bg-gray-400';
+                    const borderColor = option === 'White' || option === 'Ivory' ? 'border-gray-400' : 'border-transparent';
+                    const ringClass = isChecked ? 'ring-2 ring-offset-1 ring-accent' : '';
+                    
+                    htmlContent = `
+                        <button onclick="toggleFilter('${type}', '${option}')" 
+                                class="w-full h-8 ${bgColor} border ${borderColor} rounded-full flex items-center justify-center relative ${ringClass}"
+                                aria-label="Filter by ${option}">
+                            ${option === 'Black' && isChecked ? '<i data-lucide="check" class="w-3 h-3 text-white"></i>' : (isChecked && option !== 'Black' ? '<i data-lucide="check" class="w-3 h-3 text-black"></i>' : '')}
+                        </button>
+                    `;
+                } else {
+                    // Checkbox/Text buttons for styles and occasions
+                    htmlContent = `
+                        <label class="flex items-center cursor-pointer text-sm text-gray-600 hover:text-accent transition duration-150">
+                            <input type="checkbox" ${isChecked ? 'checked' : ''} onchange="toggleFilter('${type}', '${option}')" 
+                                class="mr-2 h-4 w-4 text-accent border-gray-300 rounded focus:ring-accent">
+                            ${option}
+                        </label>
+                    `;
+                }
+
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = htmlContent.trim();
+                if (type === 'colors') {
+                    // For colors, we use the button directly inside the grid
+                    container.appendChild(tempDiv.firstChild);
+                } else {
+                    // For others, wrap content in a div for layout
+                    container.appendChild(tempDiv.firstChild);
+                }
+            });
+            lucide.createIcons(); // Re-render icons after adding content
+        }
+
+        function toggleFilter(type, value) {
+            const index = activeFilters[type].indexOf(value);
+            if (index > -1) {
+                activeFilters[type].splice(index, 1); // Remove
+            } else {
+                activeFilters[type].push(value); // Add
+            }
+            renderFilters(); // Re-render filters to update state visually
+            renderProducts(); // Re-render products to apply filter
+        }
+
+        function clearFilters() {
+            activeFilters = { styles: [], occasions: [], colors: [] };
+            renderFilters();
+            renderProducts();
+        }
+
+        function renderProducts() {
+            const grid = document.getElementById('product-grid');
+            const productCount = document.getElementById('product-count');
+            const noResults = document.getElementById('no-results');
+            
+            if (!grid) return;
+
+            let filteredProducts = maxiDresses;
+
+            // Apply Filters
+            if (activeFilters.styles.length > 0) {
+                filteredProducts = filteredProducts.filter(p => activeFilters.styles.includes(p.style));
+            }
+            if (activeFilters.occasions.length > 0) {
+                filteredProducts = filteredProducts.filter(p => activeFilters.occasions.includes(p.occasion));
+            }
+            if (activeFilters.colors.length > 0) {
+                filteredProducts = filteredProducts.filter(p => activeFilters.colors.includes(p.color));
+            }
+            
+            // Apply Sorting
+            const sortValue = document.getElementById('sort-select').value;
+            filteredProducts.sort((a, b) => {
+                if (sortValue === 'price-asc') return a.price - b.price;
+                if (sortValue === 'price-desc') return b.price - a.price;
+                if (sortValue === 'name-asc') return a.name.localeCompare(b.name);
+                return 0; // newest/default
+            });
+
+
+            grid.innerHTML = '';
+
+            if (filteredProducts.length === 0) {
+                noResults.classList.remove('hidden');
+                productCount.textContent = '0';
+                return;
+            }
+
+            noResults.classList.add('hidden');
+            productCount.textContent = filteredProducts.length;
+
+            filteredProducts.forEach(product => {
+                const productCard = document.createElement('div');
+                productCard.className = 'group bg-white rounded-xl overflow-hidden shadow-lg hover:shadow-2xl transition duration-300 transform hover:-translate-y-1';
+                
+                // Add the AI button logic here
+                productCard.innerHTML = `
+                    <div class="relative overflow-hidden aspect-[2/3]">
+                        <img src="${product.imageUrl}" onerror="this.onerror=null; this.src='https://placehold.co/400x600/ccc/333?text=Image+Error';" 
+                             alt="${product.name}" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105">
+                        <button class="absolute top-3 right-3 p-2 bg-white rounded-full text-gray-800 opacity-0 group-hover:opacity-100 transition duration-300 transform translate-x-3 group-hover:translate-x-0" aria-label="Quick View">
+                            <i data-lucide="eye" class="w-5 h-5"></i>
+                        </button>
+                    </div>
+                    <div class="p-4 text-center">
+                        <h4 class="text-sm font-medium text-gray-900 truncate">${product.name}</h4>
+                        <p class="text-xs text-gray-500 mb-2">${product.style} &bull; ${product.occasion}</p>
+                        <p class="text-lg font-bold text-accent">$${product.price.toFixed(2)}</p>
+                        <button class="w-full mt-3 py-2 text-sm font-semibold text-white bg-accent rounded-full opacity-0 group-hover:opacity-100 transition duration-300 transform translate-y-2 group-hover:translate-y-0" aria-label="Add to Cart">
+                            Add to Cart
+                        </button>
+                        <button onclick="generateDescription({id: ${product.id}, name: '${product.name}', style: '${product.style}', occasion: '${product.occasion}', color: '${product.color}', fabric: '${product.fabric}'})"
+                                class="w-full mt-3 py-2 text-xs font-semibold text-accent border border-accent rounded-full hover:bg-accent hover:text-white transition duration-300 flex items-center justify-center">
+                            Generate Description ✨
+                        </button>
+                    </div>
+                `;
+                grid.appendChild(productCard);
+            });
+            lucide.createIcons(); // Re-render icons for new cards
+        }
+
+        function renderFilters() {
+            // Desktop
+            renderFilterOptions(styles, 'styles', 'styles-list');
+            renderFilterOptions(occasions, 'occasions', 'occasions-list');
+            renderFilterOptions(colors, 'colors', 'colors-list');
+
+            // Mobile
+            renderFilterOptions(styles, 'styles', 'mobile-styles-list');
+            renderFilterOptions(occasions, 'occasions', 'mobile-occasions-list');
+            renderFilterOptions(colors, 'colors', 'mobile-colors-list');
+
+            // Update mobile button count
+            const totalActiveFilters = activeFilters.styles.length + activeFilters.occasions.length + activeFilters.colors.length;
+            const mobileFilterButton = document.getElementById('mobile-filter-button-open');
+            if (mobileFilterButton) {
+                mobileFilterButton.innerHTML = `Filters (${totalActiveFilters}) <i data-lucide="filter" class="w-4 h-4"></i>`;
+            }
+            
+            // Update mobile modal button with count
+            const mobileModalButton = document.querySelector('#mobile-filter-modal button[onclick*="Apply"]');
+            if (mobileModalButton) {
+                // Pre-calculate count for the button text
+                const currentFilteredCount = maxiDresses.filter(p => 
+                    (activeFilters.styles.length === 0 || activeFilters.styles.includes(p.style)) &&
+                    (activeFilters.occasions.length === 0 || activeFilters.occasions.includes(p.occasion)) &&
+                    (activeFilters.colors.length === 0 || activeFilters.colors.includes(p.color))
+                ).length;
+                mobileModalButton.textContent = `Apply & View (${currentFilteredCount} Items)`;
+            }
+        }
+        
+        // --- UI UTILITIES ---
+
+        function setupMobileToggle() {
+            const menuBtn = document.getElementById('mobile-menu-button');
+            const menu = document.getElementById('mobile-menu');
+            const filterOpenBtn = document.getElementById('mobile-filter-button-open');
+            const filterCloseBtn = document.getElementById('mobile-filter-button-close');
+            const filterModal = document.getElementById('mobile-filter-modal');
+
+            menuBtn.addEventListener('click', () => menu.classList.toggle('hidden'));
+            
+            // Filter Open from Mobile Menu
+            if (filterOpenBtn) {
+                filterOpenBtn.addEventListener('click', () => {
+                    filterModal.classList.remove('translate-x-full');
+                });
+            }
+            // Filter Close from Mobile Modal
+            if (filterCloseBtn) {
+                filterCloseBtn.addEventListener('click', () => {
+                    filterModal.classList.add('translate-x-full');
+                });
+            }
+        }
+        
+        // --- INITIALIZATION ---
+        window.onload = function() {
+            document.getElementById('current-year').textContent = new Date().getFullYear();
+            renderFilters();
+            renderProducts();
+            setupMobileToggle();
+        };
+
+    </script>
+</body>
+</html>
 
